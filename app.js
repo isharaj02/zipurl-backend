@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use("/auth", authRoutes);
-app.use("/", urlRoutes);
+app.use("/urls", urlRoutes);
 
 app.get("/", (req, res) => {
   res.status(200).json({

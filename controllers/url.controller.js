@@ -65,10 +65,11 @@ exports.createShortUrl = async (req, res) => {
 };
 
 exports.redirectToOriginalUrl = async (req, res) => {
+  try{
   const { shortCode } = req.params;
 
   const query = `
-    SELECT original_url
+    SELECT id, original_url
     FROM urls
     WHERE short_code = $1
   `;
@@ -83,7 +84,127 @@ exports.redirectToOriginalUrl = async (req, res) => {
       message: "Short URL not found",
     });
   }
-
+    const urlId = result.rows[0].id;
     const originalUrl = result.rows[0].original_url;
+    await pool.query(
+      `
+        INSERT INTO click_events (url_id)
+        VALUES ($1)
+      `,
+      [urlId]
+    );
+
+    await pool.query(
+      `
+      UPDATE urls
+      SET click_count = click_count + 1
+      WHERE id = $1
+      `,
+      [urlId]
+    );
     return res.redirect(originalUrl);
+  } catch(error){
+      console.error("Redirect Error:", error);
+
+      return res.status(500).json({
+        success: false,
+        message: "Internal Server Error",
+      });
+    }
+};
+
+
+exports.getMyUrls = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const query = `
+      SELECT
+        id,
+        original_url,
+        short_code,
+        click_count,
+        created_at
+      FROM urls
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `;
+
+    const result = await pool.query(query, [userId]);
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows,
+    });
+  } catch (error) {
+    console.error("Get My URLs Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
+};
+
+
+exports.getUrlAnalytics = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const urlId = req.params.id;
+
+    const ownershipQuery = `
+      SELECT user_id
+      FROM urls
+      WHERE id = $1
+    `;
+
+    const ownershipResult = await pool.query(
+      ownershipQuery,
+      [urlId]
+    );
+
+    if (ownershipResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "URL not found",
+      });
+    }
+
+    const ownerId = ownershipResult.rows[0].user_id;
+    if (ownerId !== userId){
+      return res.status(403).json({
+        success: false,
+        message: "Access denied",
+      });
+    }
+
+    const analyticsQuery = `
+      SELECT
+        id,
+        original_url,
+        short_code,
+        click_count,
+        created_at
+      FROM urls
+      WHERE id = $1
+    `;
+
+    const analyticsResult = await pool.query(
+      analyticsQuery,
+      [urlId]
+    );
+
+    return res.status(200).json({
+      success: true,
+      data: analyticsResult.rows[0],
+    });
+
+  } catch (error) {
+    console.error("Get Analytics Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+    });
+  }
 };

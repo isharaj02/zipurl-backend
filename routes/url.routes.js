@@ -7,6 +7,7 @@ const {
   redirectToOriginalUrl,
   getMyUrls,
   getUrlAnalytics,
+  deleteUrl,
 } = require("../controllers/url.controller");
 
 router.post("/", authMiddleware, createShortUrl);
@@ -16,6 +17,7 @@ router.get(
   authMiddleware,
   getUrlAnalytics
 );
+router.delete("/:id", authMiddleware, deleteUrl);
 router.get("/:shortCode", redirectToOriginalUrl);
 
 module.exports = router;

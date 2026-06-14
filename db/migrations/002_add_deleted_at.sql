@@ -1,0 +1,2 @@
+ALTER TABLE urls
+ADD COLUMN deleted_at TIMESTAMP NULL;

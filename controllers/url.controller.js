@@ -71,7 +71,7 @@ exports.redirectToOriginalUrl = async (req, res) => {
   const query = `
     SELECT id, original_url
     FROM urls
-    WHERE short_code = $1
+    WHERE short_code = $1 AND deleted_at IS NULL
   `;
 
   const values = [shortCode];
@@ -126,7 +126,7 @@ exports.getMyUrls = async (req, res) => {
         click_count,
         created_at
       FROM urls
-      WHERE user_id = $1
+      WHERE user_id = $1 AND deleted_at IS NULL
       ORDER BY created_at DESC
     `;
 
@@ -155,7 +155,7 @@ exports.getUrlAnalytics = async (req, res) => {
     const ownershipQuery = `
       SELECT user_id
       FROM urls
-      WHERE id = $1
+      WHERE id = $1 AND deleted_at IS NULL
     `;
 
     const ownershipResult = await pool.query(
@@ -205,6 +205,55 @@ exports.getUrlAnalytics = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Internal Server Error",
+    });
+  }
+};
+
+
+exports.deleteUrl = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const query = `
+      SELECT id, user_id
+      FROM urls
+      WHERE id = $1;
+      `;
+
+    const result = await pool.query(query, [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "URL not found"
+      });
+    }
+
+    const url = result.rows[0];
+
+    if (url.user_id !== req.user.userId) {
+      return res.status(403).json({
+        success: false,
+        message: "Forbidden"
+      });
+    }
+
+    const deleteQuery = `
+      UPDATE urls
+      SET deleted_at = NOW()
+      WHERE id = $1;
+    `;
+    await pool.query(deleteQuery, [id]);
+
+    return res.status(200).json({
+      success: true,
+      message: "URL deleted successfully"
+    });
+  } catch (error) {
+    console.error(error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error"
     });
   }
 };

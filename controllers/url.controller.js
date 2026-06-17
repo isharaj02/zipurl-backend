@@ -20,7 +20,25 @@ function generateShortCode() {
 exports.createShortUrl = async (req, res) => {
   const userId = req.user.userId;
 
-  const { originalUrl, customCode } = req.body;
+  const { originalUrl, customCode, expiresAt } = req.body;
+
+  if (expiresAt) {
+    const expirationDate = new Date(expiresAt);
+
+    if (isNaN(expirationDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid expiration date",
+      });
+    }
+
+    if (expirationDate <= new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: "Expiration date must be in the future",
+      });
+    }
+  }
 
   if (!originalUrl) {
     return res.status(400).json({
@@ -65,16 +83,18 @@ exports.createShortUrl = async (req, res) => {
       INSERT INTO urls (
         user_id,
         original_url,
-        short_code
+        short_code,
+        expires_at
       )
-      VALUES ($1, $2, $3)
-      RETURNING id, short_code;
+      VALUES ($1, $2, $3, $4)
+      RETURNING id, short_code, expires_at;
     `;
       
     const values = [
       userId,
       originalUrl,
       shortCode,
+      expiresAt || null,
     ];
     const result = await pool.query(query, values);
 
@@ -100,7 +120,7 @@ exports.redirectToOriginalUrl = async (req, res) => {
   const { shortCode } = req.params;
 
   const query = `
-    SELECT id, original_url
+    SELECT id, original_url, expires_at
     FROM urls
     WHERE short_code = $1 AND deleted_at IS NULL
   `;
@@ -109,14 +129,29 @@ exports.redirectToOriginalUrl = async (req, res) => {
 
   const result = await pool.query(query, values);
 
+  console.log("shortCode:", shortCode);
+  console.log("rows:", result.rows);
+
+  
   if (result.rows.length === 0) {
     return res.status(404).json({
       success: false,
       message: "Short URL not found",
     });
   }
-    const urlId = result.rows[0].id;
-    const originalUrl = result.rows[0].original_url;
+  const url = result.rows[0];
+  const urlId = url.id;
+  const originalUrl = url.original_url;
+    if (
+      url.expires_at &&
+      new Date(url.expires_at) <= new Date()
+    ) 
+    {
+      return res.status(410).json({
+        success: false,
+        message: "This URL has expired",
+      });
+    }
     await pool.query(
       `
         INSERT INTO click_events (url_id)
@@ -149,22 +184,115 @@ exports.getMyUrls = async (req, res) => {
   try {
     const userId = req.user.userId;
 
+    const page = parseInt(req.query.page ?? "1");
+    const limit = parseInt(req.query.limit ?? "10");
+    const search = req.query.search?.trim() || "";
+    const status = req.query.status?.trim().toLowerCase() || ""; 
+    const searchPattern = `%${search}%`;   
+
+    const allowedStatuses = [
+      "active",
+      "expired",
+      "deleted",
+    ];
+
+    if (
+      status &&
+      !allowedStatuses.includes(status)
+    ) 
+    {
+      return res.status(400).json({
+        success: false,
+        message: "status must be active, expired, or deleted",
+      });
+    }     
+
+    if (page < 1 || limit < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "page and limit must be positive integers",
+      });
+    }
+
+    const offset = (page - 1) * limit;
+    let statusCondition = "";
+    if (status === "active") {
+      statusCondition = `
+        AND deleted_at IS NULL
+        AND (
+          expires_at IS NULL
+          OR expires_at > NOW()
+        )
+      `;
+    }
+    if (status === "expired") {
+      statusCondition = `
+        AND deleted_at IS NULL
+        AND expires_at IS NOT NULL
+        AND expires_at <= NOW()
+      `;
+    } 
+    if (status === "deleted") {
+      statusCondition = `
+        AND deleted_at IS NOT NULL
+      `;
+    } 
+
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM urls
+      WHERE user_id = $1
+        ${statusCondition}
+        AND (
+          original_url ILIKE $2
+          OR short_code ILIKE $2
+        )
+    `;
+
+    const countResult = await pool.query(countQuery, [userId, searchPattern]);
+
+    const totalItems = parseInt(
+      countResult.rows[0].total
+    );
+    const totalPages = Math.ceil(
+      totalItems / limit
+    );
+
     const query = `
       SELECT
         id,
         original_url,
         short_code,
         click_count,
-        created_at
+        created_at, 
+        expires_at
       FROM urls
-      WHERE user_id = $1 AND deleted_at IS NULL
+      WHERE user_id = $1 
+        ${statusCondition}
+        AND (
+          original_url ILIKE $2
+          OR short_code ILIKE $2
+        )
       ORDER BY created_at DESC
+      LIMIT $3
+      OFFSET $4;
     `;
 
-    const result = await pool.query(query, [userId]);
+    const result = await pool.query(query, [
+      userId,
+      searchPattern,
+      limit,
+      offset,
+    ]);
 
     return res.status(200).json({
       success: true,
+      pagination: {
+        page, 
+        limit,
+        totalItems,
+        totalPages,
+      },
       data: result.rows,
     });
   } catch (error) {
@@ -288,6 +416,7 @@ exports.deleteUrl = async (req, res) => {
     });
   }
 };
+
 
 exports.restoreUrl = async (req, res) => {
   const { id } = req.params;

@@ -11,7 +11,12 @@ const {
   restoreUrl
 } = require("../controllers/url.controller");
 
-router.post("/", authMiddleware, createShortUrl);
+const {
+  createUrlLimiter,
+  redirectLimiter
+} = require("../middleware/rateLimitMiddleware");
+
+router.post("/", createUrlLimiter, authMiddleware, createShortUrl);
 router.get("/my", authMiddleware, getMyUrls);
 router.get(
   "/:id/analytics",
@@ -19,7 +24,7 @@ router.get(
   getUrlAnalytics
 );
 router.delete("/:id", authMiddleware, deleteUrl);
-router.get("/:shortCode", redirectToOriginalUrl);
+router.get("/:shortCode", redirectLimiter,redirectToOriginalUrl);
 router.patch("/:id/restore", authMiddleware, restoreUrl);
 
 module.exports = router;

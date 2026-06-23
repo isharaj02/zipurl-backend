@@ -21,15 +21,33 @@ const options = {
       },
     ],
     components: {
-      securitySchemes: {
-        BearerAuth: {
-          type: 'http',
-          scheme: 'bearer',
-          bearerFormat: 'JWT',
-          description: 'Enter your JWT token in the format: <token_value>',
+        securitySchemes: {
+            BearerAuth: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+            },
         },
-      },
     },
+    security: [
+        {
+            BearerAuth: [],
+        },
+    ],
+    tags: [
+        {
+            name: "Auth",
+            description: "Authentication APIs",
+        },
+        {
+            name: "URLs",
+            description: "URL Shortener APIs",
+        },
+        {
+            name: "Analytics",
+            description: "Analytics and tracking APIs",
+        },
+    ],
   },
   apis: [
     path.join(__dirname, '../routes/auth.routes.js'),

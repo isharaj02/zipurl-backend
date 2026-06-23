@@ -1,12 +1,34 @@
 const express = require("express");
 const cors = require("cors");
+const { swaggerUi, swaggerSpec } = require("./config/swagger");
 
 const authRoutes = require("./routes/auth.routes");
 const urlRoutes = require("./routes/url.routes");
 const app = express();
 
-app.use(cors());
+
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://zipurl-backend-v8v2.onrender.com'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('CORS Not Allowed'), false);
+    }
+    return callback(null, true);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
 app.use(express.json());
+
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use("/auth", authRoutes);
 app.use("/urls", urlRoutes);
 

@@ -12,12 +12,12 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:5000',
-        description: 'Development server',
-      },
-      {
         url: 'https://zipurl-backend-v8v2.onrender.com',
         description: 'Production server (Render)',
+      },
+      {
+        url: 'http://localhost:5000',
+        description: 'Development server',
       },
     ],
     components: {
@@ -31,7 +31,10 @@ const options = {
       },
     },
   },
-  apis: [path.join(__dirname, '../routes/*.js')],
+  apis: [
+    path.join(__dirname, '../routes/auth.routes.js'),
+    path.join(__dirname, '../routes/url.routes.js')
+  ],
 };
 
 const swaggerSpec = swaggerJsdoc(options);

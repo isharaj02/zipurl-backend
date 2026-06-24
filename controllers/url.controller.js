@@ -168,7 +168,20 @@ exports.redirectToOriginalUrl = async (req, res) => {
       `,
       [urlId]
     );
+    const isApiRequest =
+      req.query.api === "true" ||
+      req.headers.accept?.includes("application/json");
+
+    if (isApiRequest) {
+      return res.json({
+        success: true,
+        message: "Redirect URL",
+        data: { url: originalUrl }
+      });
+    }
+
     return res.redirect(originalUrl);
+    
   } catch(error){
       console.error("Redirect Error:", error);
 

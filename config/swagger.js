@@ -12,28 +12,20 @@ const options = {
     },
     servers: [
       {
-        url: 'https://zipurl-backend-v8v2.onrender.com',
-        description: 'Production server (Render)',
-      },
-      {
-        url: 'http://localhost:5000',
-        description: 'Development server',
-      },
+        url: "https://zipurl-backend-v8v2.onrender.com",
+        description: "Production server"
+      }
     ],
     components: {
         securitySchemes: {
             BearerAuth: {
-            type: "http",
-            scheme: "bearer",
-            bearerFormat: "JWT",
+                type: "http",
+                scheme: "bearer",
+                bearerFormat: "JWT",
             },
         },
     },
-    security: [
-        {
-            BearerAuth: [],
-        },
-    ],
+    
     tags: [
         {
             name: "Auth",

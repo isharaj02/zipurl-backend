@@ -98,8 +98,10 @@
  *     responses:
  *       200:
  *         description: Analytics fetched successfully
- *       401:
- *         description: Unauthorized
+ *       403:
+ *         description: Access denied
+ *       500:
+ *         description: Server error
  *       404:
  *         description: URL not found
  */
@@ -122,8 +124,12 @@
  *     responses:
  *       200:
  *         description: URL deleted successfully
- *       401:
- *         description: Unauthorized
+ *       403:
+ *         description: Forbidden
+ *       404:
+ *         description: URL not found
+ *       500:
+ *         description: Server Error
  */
 
 /**
@@ -144,8 +150,14 @@
  *     responses:
  *       200:
  *         description: URL restored successfully
- *       401:
- *         description: Unauthorized
+ *       400:
+ *         description: URL already active
+ *       403:
+ *         description: Access denied
+ *       404:
+ *         description: URL not found
+ *       500:
+ *         description: Server error
  */
 
 /**
@@ -168,6 +180,8 @@
  *         description: URL not found
  *       410:
  *         description: URL expired
+ *       500:
+ *         description: Server Error
  */
 
 const express = require("express");

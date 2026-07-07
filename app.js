@@ -5,7 +5,7 @@ const { swaggerUi, swaggerSpec } = require("./config/swagger");
 const authRoutes = require("./routes/auth.routes");
 const urlRoutes = require("./routes/url.routes");
 const app = express();
-
+app.set("trust proxy", 1);
 
 const allowedOrigins = [
   'http://localhost:3000',

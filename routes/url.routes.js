@@ -62,18 +62,33 @@
  *         schema:
  *           type: integer
  *           example: 1
+ *           description: Page number
  *       - in: query
  *         name: limit
  *         schema:
  *           type: integer
  *           example: 10
+ *           description: Number of URLs per page
  *       - in: query
  *         name: search
  *         schema:
  *           type: string
+ *           description: Search by original URL or short code
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum:
+ *             - active
+ *             - expired
+ *             - deleted
+ *           example: active
+ *           description: Filter URLs by status
  *     responses:
  *       200:
  *         description: URLs fetched successfully
+ *       400:
+ *          description: Invalid query parameters
  *       401:
  *         description: Unauthorized
  *       500:
@@ -193,7 +208,8 @@ const {
   getMyUrls,
   getUrlAnalytics,
   deleteUrl,
-  restoreUrl
+  restoreUrl,
+  getDashboardOverview,
 } = require("../controllers/url.controller");
 const { createUrlLimiter, redirectLimiter } = require("../middleware/rateLimitMiddleware");
 
@@ -201,6 +217,7 @@ const { createUrlLimiter, redirectLimiter } = require("../middleware/rateLimitMi
 router.post("/", createUrlLimiter, authMiddleware, createShortUrl);
 
 router.get("/my", authMiddleware, getMyUrls);
+router.get("/dashboard", authMiddleware, getDashboardOverview);
 
 router.get("/:id/analytics", authMiddleware, getUrlAnalytics);
 

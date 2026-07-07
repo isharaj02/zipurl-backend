@@ -22,6 +22,31 @@ exports.createShortUrl = async (req, res) => {
 
   const { originalUrl, customCode, expiresAt } = req.body;
 
+  if (!originalUrl) {
+    return res.status(400).json({
+      success: false,
+      message: "Original URL is required",
+    });
+  }
+
+  let normalizedUrl = originalUrl.trim();
+
+  if (
+    !normalizedUrl.startsWith("http://") &&
+    !normalizedUrl.startsWith("https://")
+  ) {
+    normalizedUrl = `https://${normalizedUrl}`;
+  }
+
+  try {
+    new URL(normalizedUrl);
+  } catch {
+    return res.status(400).json({
+      success: false,
+      message: "Invalid URL",
+    });
+  }
+
   if (expiresAt) {
     const expirationDate = new Date(expiresAt);
 
@@ -39,16 +64,10 @@ exports.createShortUrl = async (req, res) => {
       });
     }
   }
-
-  if (!originalUrl) {
-    return res.status(400).json({
-      success: false,
-      message: "Original URL is required",
-    });
-  }
   
+  let customCodeUnavailable = false;
+  let shortCode;
   if (customCode) {
-    console.log("Custom code received:", customCode);
 
     const customCodeRegex = /^[a-zA-Z0-9_-]{3,30}$/;
 
@@ -69,14 +88,17 @@ exports.createShortUrl = async (req, res) => {
     const checkResult = await pool.query(checkQuery, [customCode]);
 
     if (checkResult.rows.length > 0) {
-      return res.status(409).json({
-        success: false,
-        message: "Short code already exists",
-      });
+      customCodeUnavailable = true;
+      shortCode = generateShortCode();
+    } 
+    else {
+      shortCode = customCode;
     }
   }
 
-  const shortCode = customCode || generateShortCode();;
+  if (!shortCode) {
+    shortCode = generateShortCode();
+  }
 
   try{
     const query = `
@@ -92,7 +114,7 @@ exports.createShortUrl = async (req, res) => {
       
     const values = [
       userId,
-      originalUrl,
+      normalizedUrl,
       shortCode,
       expiresAt || null,
     ];
@@ -100,19 +122,20 @@ exports.createShortUrl = async (req, res) => {
 
     res.status(201).json({
       success: true,
-      message: "Short URL generated",
+      message: customCodeUnavailable
+  ? "Custom code already used. Random short code generated."
+  : "Short URL generated",
       data: {
         shortCode: result.rows[0].short_code,
       },
     });
   } catch(error){
-    console.error(error);
+    console.error("Create Short URL Error:", error);
     return res.status(500).json({
         success: false,
         message: "Internal server error",
     });
-  }
-   
+  }  
 };
 
 exports.redirectToOriginalUrl = async (req, res) => {
@@ -128,10 +151,6 @@ exports.redirectToOriginalUrl = async (req, res) => {
   const values = [shortCode];
 
   const result = await pool.query(query, values);
-
-  console.log("shortCode:", shortCode);
-  console.log("rows:", result.rows);
-
   
   if (result.rows.length === 0) {
     return res.status(404).json({
@@ -278,7 +297,8 @@ exports.getMyUrls = async (req, res) => {
         short_code,
         click_count,
         created_at, 
-        expires_at
+        expires_at,
+        deleted_at
       FROM urls
       WHERE user_id = $1 
         ${statusCondition}
@@ -327,7 +347,7 @@ exports.getUrlAnalytics = async (req, res) => {
     const ownershipQuery = `
       SELECT user_id
       FROM urls
-      WHERE id = $1 AND deleted_at IS NULL
+      WHERE id = $1
     `;
 
     const ownershipResult = await pool.query(
@@ -356,7 +376,9 @@ exports.getUrlAnalytics = async (req, res) => {
         original_url,
         short_code,
         click_count,
-        created_at
+        created_at,
+        expires_at,
+        deleted_at
       FROM urls
       WHERE id = $1
     `;
@@ -386,7 +408,7 @@ exports.deleteUrl = async (req, res) => {
   try {
     const { id } = req.params;
     const query = `
-      SELECT id, user_id
+      SELECT id, user_id, deleted_at
       FROM urls
       WHERE id = $1;
       `;
@@ -409,6 +431,13 @@ exports.deleteUrl = async (req, res) => {
       });
     }
 
+    if (url.deleted_at !== null) {
+      return res.status(400).json({
+        success: false,
+        message: "URL is already deleted",
+      });
+    }
+
     const deleteQuery = `
       UPDATE urls
       SET deleted_at = NOW()
@@ -416,12 +445,14 @@ exports.deleteUrl = async (req, res) => {
     `;
     await pool.query(deleteQuery, [id]);
 
+    
+
     return res.status(200).json({
       success: true,
       message: "URL deleted successfully"
     });
   } catch (error) {
-    console.error(error);
+    console.error("Delete URL Error:", error);
 
     return res.status(500).json({
       success: false,
@@ -479,14 +510,86 @@ exports.restoreUrl = async (req, res) => {
       success: true,
       message: "URL restored successfully",
     });
-    console.log(result.rows);
 
   } catch (error) {
-    console.error(error);
-
+    console.error("Restore URL Error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
+    });
+  }
+};
+
+
+
+exports.getDashboardOverview = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    const statsQuery = `
+      SELECT
+        COUNT(*) AS total_urls,
+
+        COUNT(*) FILTER (
+          WHERE deleted_at IS NULL
+          AND (
+            expires_at IS NULL
+            OR expires_at > NOW()
+          )
+        ) AS active_urls,
+
+        COUNT(*) FILTER (
+          WHERE deleted_at IS NULL
+          AND expires_at IS NOT NULL
+          AND expires_at <= NOW()
+        ) AS expired_urls,
+
+        COUNT(*) FILTER (
+          WHERE deleted_at IS NOT NULL
+        ) AS deleted_urls,
+
+        COALESCE(SUM(click_count), 0) AS total_clicks
+
+      FROM urls
+      WHERE user_id = $1;
+    `;
+
+    const statsResult = await pool.query(statsQuery, [userId]);
+
+    const recentUrlsQuery = `
+      SELECT
+        id,
+        original_url,
+        short_code,
+        click_count,
+        created_at,
+        expires_at,
+        deleted_at
+      FROM urls
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+      LIMIT 5;
+    `;
+
+    const recentUrlsResult = await pool.query(recentUrlsQuery, [userId]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        totalUrls: Number(statsResult.rows[0].total_urls),
+        activeUrls: Number(statsResult.rows[0].active_urls),
+        expiredUrls: Number(statsResult.rows[0].expired_urls),
+        deletedUrls: Number(statsResult.rows[0].deleted_urls),
+        totalClicks: Number(statsResult.rows[0].total_clicks),
+        recentUrls: recentUrlsResult.rows,
+      },
+    });
+  } catch (error) {
+    console.error("Dashboard Overview Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
     });
   }
 };
